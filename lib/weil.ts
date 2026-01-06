@@ -1,16 +1,5 @@
 import { WeilWalletConnection } from '@weilliptic/weil-sdk';
 
-// FIX: Removed conflicting global declaration of WeilWallet.
-// The SDK likely defines this type globally which caused a mismatch error ("All declarations... must have identical modifiers").
-// We will access it via (window as any) to bypass type conflicts.
-/*
-declare global {
-  interface Window {
-    WeilWallet?: any;
-  }
-}
-*/
-
 /**
  * Connects to the Weil Wallet extension.
  * @returns The wallet address as a hex string.
@@ -20,30 +9,67 @@ export async function connectWallet(): Promise<string> {
     throw new Error('Must be called in browser');
   }
 
-  // FIX: Access WeilWallet via (window as any) to avoid type errors.
   const provider = (window as any).WeilWallet;
 
   if (!provider) {
     throw new Error('WeilWallet not found. Please install the wallet extension.');
   }
 
-  // FIX: Cast to any to avoid "Property 'getAddress' does not exist" error.
-  const wallet = new WeilWalletConnection({
-    walletProvider: provider,
-  }) as any;
-
-  // The SDK doesn't strictly define the method to get the address in the README provided,
-  // but standard pattern implies requesting access or getting the address property.
-  // We assume getAddress() is available or the wallet exposes it.
   try {
-    // Attempt to get address (assuming SDK follows standard dApp pattern)
-    // If specific method differs, this would need adjustment based on exact API docs.
-    const address = await wallet.getAddress();
+    // Trigger the wallet connection popup.
+    // Different wallet standards use different method names. We try the most common ones.
+    if (typeof provider.enable === 'function') {
+      await provider.enable();
+    } else if (typeof provider.connect === 'function') {
+      await provider.connect();
+    } else if (typeof provider.request === 'function') {
+       // EIP-1193 pattern
+       try {
+         await provider.request({ method: 'eth_requestAccounts' });
+       } catch (e) {
+         // Fallback for non-EVM standard wallets using request
+         await provider.request({ method: 'connect' });
+       }
+    }
+
+    // Initialize SDK wrapper
+    const wallet = new WeilWalletConnection({
+      walletProvider: provider,
+    }) as any;
+
+    // Some SDK wrappers might require an explicit connect call
+    if (typeof wallet.connect === 'function') {
+      await wallet.connect();
+    }
+
+    // Attempt to retrieve the address from various possible properties/methods
+    let address = '';
+    
+    if (typeof wallet.getAddress === 'function') {
+      address = await wallet.getAddress();
+    } else if (wallet.address) {
+      address = wallet.address;
+    } else if (typeof wallet.getAccounts === 'function') {
+      const accounts = await wallet.getAccounts();
+      if (Array.isArray(accounts) && accounts.length > 0) {
+         // specific handling if accounts are objects or strings
+         address = typeof accounts[0] === 'string' ? accounts[0] : accounts[0].address;
+      }
+    } 
+    
+    // Fallback to provider direct access if SDK fails
+    if (!address) {
+       address = provider.selectedAddress || provider.address;
+    }
+
+    if (!address) {
+      throw new Error("Wallet connected but address could not be retrieved. Please check wallet permissions.");
+    }
+
     return address;
   } catch (error) {
-    console.error("Error retrieving address:", error);
-    // Fallback if getAddress isn't the method name, though highly likely.
-    throw new Error("Could not retrieve wallet address. Please ensure wallet is unlocked.");
+    console.error("Error connecting wallet:", error);
+    throw error;
   }
 }
 
@@ -68,14 +94,12 @@ async function fetchToHex(url: string): Promise<string> {
  * @returns Object containing the deployed contract address
  */
 export async function deployContract(wasmUrl: string, widlUrl: string): Promise<{ contractAddress: string }> {
-  // FIX: Access WeilWallet via (window as any).
   const provider = (window as any).WeilWallet;
 
   if (!provider) {
     throw new Error('Wallet not connected');
   }
 
-  // FIX: Cast to any to bypass type checks on contract deployment return type
   const wallet = new WeilWalletConnection({
     walletProvider: provider,
   }) as any;
@@ -88,7 +112,6 @@ export async function deployContract(wasmUrl: string, widlUrl: string): Promise<
     ]);
 
     // 2. Deploy via SDK
-    // FIX: wallet is cast to any, so result is any, avoiding "Property 'address' does not exist on type 'any[]'" error.
     const result = await wallet.contracts.deploy(
       binHex,
       widlHex,
@@ -99,8 +122,6 @@ export async function deployContract(wasmUrl: string, widlUrl: string): Promise<
 
     console.log('Contract Deployment Result:', result);
 
-    // The SDK README result structure isn't fully detailed, but usually includes the address.
-    // We attempt to extract it from likely properties.
     const contractAddress = result.address || result.contractAddress || (typeof result === 'string' ? result : '');
 
     if (!contractAddress) {
