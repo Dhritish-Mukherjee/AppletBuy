@@ -22,8 +22,13 @@ const App: React.FC = () => {
   const handlePurchase = async (mcp: MCP) => {
     setLoading(true);
     try {
-      // Simulate deployment process
-      const { contractAddress } = await deployContract('path/to/wasm', 'path/to/widl');
+      // Use generic paths for demonstration. In a real app, these would point to 
+      // actual .wasm and .widl files served from the public directory.
+      // Example: /contracts/incident-manager.wasm
+      const wasmPath = `/contracts/${mcp.id}.wasm`;
+      const widlPath = `/contracts/${mcp.id}.widl`;
+
+      const { contractAddress } = await deployContract(wasmPath, widlPath);
       
       setPurchasedMCPs(prev => [...prev, {
         ...mcp,
@@ -32,6 +37,8 @@ const App: React.FC = () => {
       }]);
     } catch (err) {
       console.error('Purchase failed:', err);
+      // Optional: Add UI feedback for failure here
+      alert('Failed to deploy contract. Ensure files exist and wallet is approved.');
     } finally {
       setLoading(false);
     }

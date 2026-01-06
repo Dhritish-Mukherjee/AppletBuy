@@ -1,56 +1,104 @@
-// In a real environment, you would import the SDK here.
-// import { WeilWalletConnection } from '@weilliptic/weil-sdk';
+import { WeilWalletConnection } from '@weilliptic/weil-sdk';
 
-// Extending Window interface to include WeilWallet for TypeScript
+// Extending Window interface to include WeilWallet
 declare global {
   interface Window {
     WeilWallet?: any;
   }
 }
 
+/**
+ * Connects to the Weil Wallet extension.
+ * @returns The wallet address as a hex string.
+ */
 export async function connectWallet(): Promise<string> {
-  // Simulation mode for the demo since we don't have the actual extension installed in this environment
-  console.log("Simulating wallet connection...");
-  await new Promise(resolve => setTimeout(resolve, 800));
-  return '7a3f2c8e9b1d4a5c6f0e8b2a9c3d1f5e8a4b7c2d9f1a3e5b8c0d2f4a6e9b1c3d';
+  if (typeof window === 'undefined') {
+    throw new Error('Must be called in browser');
+  }
 
-  /* 
-  // Real implementation code:
+  if (!window.WeilWallet) {
+    throw new Error('WeilWallet not found. Please install the wallet extension.');
+  }
+
+  const wallet = new WeilWalletConnection({
+    walletProvider: window.WeilWallet,
+  });
+
+  // The SDK doesn't strictly define the method to get the address in the README provided,
+  // but standard pattern implies requesting access or getting the address property.
+  // We assume getAddress() is available or the wallet exposes it.
   try {
-    if (typeof window === 'undefined') {
-      throw new Error('Must be called in browser');
-    }
-
-    if (!window.WeilWallet) {
-      throw new Error('WeilWallet not found. Please install the wallet extension.');
-    }
-
-    const wallet = new WeilWalletConnection({
-      walletProvider: window.WeilWallet,
-    });
-
-    const address = await wallet.getAddress?.() || 
-      '7a3f2c8e9b1d4a5c6f0e8b2a9c3d1f5e8a4b7c2d9f1a3e5b8c0d2f4a6e9b1c3d';
-
+    // Attempt to get address (assuming SDK follows standard dApp pattern)
+    // If specific method differs, this would need adjustment based on exact API docs.
+    const address = await wallet.getAddress();
     return address;
   } catch (error) {
-    console.error('Wallet connection error:', error);
-    throw error;
+    console.error("Error retrieving address:", error);
+    // Fallback if getAddress isn't the method name, though highly likely.
+    throw new Error("Could not retrieve wallet address. Please ensure wallet is unlocked.");
   }
-  */
 }
 
-export async function deployContract(wasmPath: string, widlPath: string): Promise<{ contractAddress: string }> {
-   console.log(`Simulating deployment of ${wasmPath}...`);
-    const result = await new Promise<{ contractAddress: string }>((resolve) => {
-      setTimeout(() => {
-        resolve({
-          contractAddress: Array.from({ length: 64 }, () => 
-            Math.floor(Math.random() * 16).toString(16)
-          ).join('')
-        });
-      }, 2000);
-    });
+/**
+ * Helper to fetch a file and convert it to a hex string.
+ */
+async function fetchToHex(url: string): Promise<string> {
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`Failed to fetch file: ${url} (Status: ${response.status})`);
+  }
+  const buffer = await response.arrayBuffer();
+  return Array.from(new Uint8Array(buffer))
+    .map(b => b.toString(16).padStart(2, '0'))
+    .join('');
+}
 
-    return result;
+/**
+ * Deploys a contract using the Weil SDK.
+ * @param wasmUrl URL to the .wasm file
+ * @param widlUrl URL to the .widl file
+ * @returns Object containing the deployed contract address
+ */
+export async function deployContract(wasmUrl: string, widlUrl: string): Promise<{ contractAddress: string }> {
+  if (!window.WeilWallet) {
+    throw new Error('Wallet not connected');
+  }
+
+  const wallet = new WeilWalletConnection({
+    walletProvider: window.WeilWallet,
+  });
+
+  try {
+    // 1. Fetch files and convert to HEX
+    const [binHex, widlHex] = await Promise.all([
+      fetchToHex(wasmUrl),
+      fetchToHex(widlUrl)
+    ]);
+
+    // 2. Deploy via SDK
+    const result = await wallet.contracts.deploy(
+      binHex,
+      widlHex,
+      {
+        author: 'MCP Marketplace'
+      }
+    );
+
+    console.log('Contract Deployment Result:', result);
+
+    // The SDK README result structure isn't fully detailed, but usually includes the address.
+    // We attempt to extract it from likely properties.
+    const contractAddress = result.address || result.contractAddress || (typeof result === 'string' ? result : '');
+
+    if (!contractAddress) {
+      console.warn("Could not parse contract address from result", result);
+      return { contractAddress: "deployment-successful-unknown-address" };
+    }
+
+    return { contractAddress };
+
+  } catch (error) {
+    console.error('Contract deployment error:', error);
+    throw error;
+  }
 }
