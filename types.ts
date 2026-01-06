@@ -1,21 +1,20 @@
-export interface MCP {
-  id: string;
-  name: string;
-  description: string;
-  price: number;
-  features: string[];
-  icon: string;
-  premium?: boolean;
-  contractAddress?: string;
-  purchasedAt?: string;
+export interface WeilWalletRequest {
+  method: string;
+  params?: any[];
 }
 
-export interface PurchasedMCP extends MCP {
-  contractAddress: string;
-  purchasedAt: string;
-}
-
-export interface WalletState {
-  connected: boolean;
+export interface WeilAccount {
   address: string;
+  [key: string]: any;
+}
+
+export interface WeilWalletResult {
+  accounts?: WeilAccount[] | string[];
+  [key: string]: any;
+}
+
+declare global {
+  interface WeilWalletProvider {
+    request: (args: WeilWalletRequest) => Promise<any>;
+  }
 }
