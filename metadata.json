@@ -1,0 +1,5 @@
+{
+  "name": "MCP Marketplace",
+  "description": "A React-based marketplace for deploying incident response MCPs.",
+  "requestFramePermissions": []
+}
